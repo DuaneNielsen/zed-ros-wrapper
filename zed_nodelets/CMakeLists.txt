@@ -55,6 +55,12 @@ find_package(catkin REQUIRED COMPONENTS
     zed_interfaces
 )
 
+###############################################################################
+## yolov7
+option(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
+find_package(OpenCV)
+###############################################################################
+
 generate_dynamic_reconfigure_options(
   cfg/Zed.cfg
 )
@@ -103,7 +109,19 @@ set(INCLUDE_DIRS
 link_directories(${ZED_LIBRARY_DIR})
 link_directories(${CUDA_LIBRARY_DIRS})
 
+## yolov7
+include_directories(${OpenCV_INCLUDE_DIRS})
+link_directories(${CUDA_TOOLKIT_ROOT_DIR}/lib64)
+
 ###############################################################################
+# yolov7 binary
+add_executable(yolo ${PROJECT_SOURCE_DIR}/src/zed_nodelet/src/yolov7.cpp)
+target_include_directories(yolo PRIVATE ${INCLUDE_DIRS})
+target_link_libraries(yolo nvinfer)
+target_link_libraries(yolo nvinfer_plugin)
+target_link_libraries(yolo cudart)
+target_link_libraries(yolo ${OpenCV_LIBS})
+add_definitions(-O2 -pthread)
 
 ###############################################################################
 # ZED WRAPPER NODELET
@@ -129,6 +147,8 @@ add_dependencies(
     ${catkin_EXPORTED_TARGETS}
     ${PROJECT_NAME}_gencfg
 )
+
+
 
 ###############################################################################
 
