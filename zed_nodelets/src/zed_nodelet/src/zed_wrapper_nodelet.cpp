@@ -790,6 +790,8 @@ void ZEDWrapperNodelet::readParameters()
         if (mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_ACCURATE || mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_MEDIUM || mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_FAST) {
             mNhNs.getParam("object_detection/body_fitting", mObjDetBodyFitting);
             NODELET_INFO_STREAM(" * Body fitting\t\t\t-> " << (mObjDetBodyFitting ? "ENABLED" : "DISABLED"));
+        } else if (mObjDetModel == sl::DETECTION_MODEL::CUSTOM_BOX_OBJECTS) {
+	   NODELET_INFO_STREAM("CUSTOM DETECTOR LOADED"); 
         } else {
             mNhNs.getParam("object_detection/mc_people", mObjDetPeopleEnable);
             NODELET_INFO_STREAM(" * Detect people\t\t-> " << (mObjDetPeopleEnable ? "ENABLED" : "DISABLED"));
@@ -1382,6 +1384,7 @@ void ZEDWrapperNodelet::stop_3d_mapping()
 
 bool ZEDWrapperNodelet::start_obj_detect()
 {
+    //todo : modify this function to accept a custom model
     if (mZedRealCamModel == sl::MODEL::ZED) {
         NODELET_ERROR_STREAM("Object detection not started. OD is not available for ZED camera model");
         return false;
@@ -1425,6 +1428,7 @@ bool ZEDWrapperNodelet::start_obj_detect()
 
     mObjDetFilter.clear();
 
+    // this will be skipped if detection model is custom
     if (mObjDetModel == sl::DETECTION_MODEL::MULTI_CLASS_BOX || mObjDetModel == sl::DETECTION_MODEL::MULTI_CLASS_BOX_MEDIUM || mObjDetModel == sl::DETECTION_MODEL::MULTI_CLASS_BOX_ACCURATE) {
         if (mObjDetPeopleEnable) {
             mObjDetFilter.push_back(sl::OBJECT_CLASS::PERSON);
@@ -4234,6 +4238,7 @@ bool ZEDWrapperNodelet::on_save_3d_map(zed_interfaces::save_3d_map::Request& req
 bool ZEDWrapperNodelet::on_start_object_detection(zed_interfaces::start_object_detection::Request& req,
     zed_interfaces::start_object_detection::Response& res)
 {
+    //todo: need to add custom detector here
     NODELET_INFO("Called 'start_object_detection' service");
 
     if (mZedRealCamModel == sl::MODEL::ZED) {
@@ -4321,11 +4326,49 @@ bool ZEDWrapperNodelet::on_stop_object_detection(zed_interfaces::stop_object_det
 
 void ZEDWrapperNodelet::processDetectedObjects(ros::Time t)
 {
+    NODELET_INFO_STREAM("Entered process DetectedObjects");
+    // todo: we could put our object detection code here
     static std::chrono::steady_clock::time_point old_time = std::chrono::steady_clock::now();
 
     sl::ObjectDetectionRuntimeParameters objectTracker_parameters_rt;
     objectTracker_parameters_rt.detection_confidence_threshold = mObjDetConfidence;
     objectTracker_parameters_rt.object_class_filter = mObjDetFilter;
+
+    
+    std::vector<sl::CustomBoxObjectData> objects_in;
+
+    // The "detections" variable contains your custom 2D detections
+    for (int i = 0; i < 1; i++) {
+        sl::CustomBoxObjectData tmp;
+        // Fill the detections into the correct SDK format
+        tmp.unique_object_id = sl::generate_unique_id();
+        tmp.probability = 1.0;
+        tmp.label = (int) 0;
+        /**
+         * \brief 2D bounding box of the person represented as four 2D points starting at the top left corner and rotation clockwise.
+         * Expressed in pixels on the original image resolution, [0,0] is the top left corner.
+         * \code
+             A ------ B
+             | Object |
+             D ------ C
+         \endcode
+         */
+
+	int left = 300;
+	int right = 500;
+	int top = 200;
+	int bottom = 400;
+
+	std::vector<sl::uint2> bbox_out(4);
+        bbox_out[0] = sl::uint2(left, top);
+        bbox_out[1] = sl::uint2(right, top);
+        bbox_out[2] = sl::uint2(right, bottom);
+        bbox_out[3] = sl::uint2(left, bottom);
+        tmp.bounding_box_2d = bbox_out;
+        tmp.is_grounded = true; // objects are moving on the floor plane and tracked in 2D only
+        objects_in.push_back(tmp);
+    }
+    mZed.ingestCustomBoxObjects(objects_in);
 
     sl::Objects objects;
 
@@ -4411,6 +4454,7 @@ void ZEDWrapperNodelet::processDetectedObjects(ros::Time t)
     }
 
     mPubObjDet.publish(objMsg);
+    NODELET_INFO_STREAM("Exited process DetectedObjects");
 }
 
 void ZEDWrapperNodelet::clickedPtCallback(geometry_msgs::PointStampedConstPtr msg)
