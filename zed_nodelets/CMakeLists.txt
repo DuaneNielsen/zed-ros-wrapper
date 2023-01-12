@@ -115,7 +115,7 @@ link_directories(${CUDA_TOOLKIT_ROOT_DIR}/lib64)
 
 ###############################################################################
 # yolov7 binary
-add_executable(yolo ${PROJECT_SOURCE_DIR}/src/zed_nodelet/src/yolov7.cpp)
+add_executable(yolo ${PROJECT_SOURCE_DIR}/src/zed_nodelet/src/yolo.cpp)
 target_include_directories(yolo PRIVATE ${INCLUDE_DIRS})
 target_link_libraries(yolo nvinfer)
 target_link_libraries(yolo nvinfer_plugin)
