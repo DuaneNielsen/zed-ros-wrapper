@@ -167,21 +167,14 @@ Yolo::Yolo(char* model_path) {
   }
 }
 
-void Yolo::Infer(
-    int aWidth,
-    int aHeight,
-    int aChannel,
-    unsigned char* aBytes,
-    float* Boxes,
-    int* ClassIndexs,
-    int* BboxNum) {
+std::vector<sl::CustomBoxObjectData> Yolo::Infer( int aWidth, int aHeight, int aChannel, unsigned char* aBytes) {
   cv::Mat img(aHeight, aWidth, CV_MAKETYPE(CV_8U, aChannel), aBytes);
   cv::Mat pr_img;
   float scale = letterbox(img, pr_img, {iW, iH}, 32, {114, 114, 114}, true);
-  // cv::cvtColor(pr_img, pr_img, cv::COLOR_BGR2RGB);
-  // cv::imshow("preprocessed image", pr_img);
-  // cv::waitKey(0);
-  cv::imwrite("input.jpg", pr_img);
+  //cv::cvtColor(pr_img, pr_img, cv::COLOR_BGR2RGB);
+  cv::imshow("preprocessed image", pr_img);
+  cv::waitKey(10);
+ // cv::imwrite("input.jpg", pr_img);
   float* blob = blobFromImage(pr_img);
 
   static int* num_dets = new int[out_size1];
@@ -220,27 +213,43 @@ void Yolo::Infer(
     cout << "transmit to host failed \n";
     std::abort();
   }
-  BboxNum[0] = num_dets[0];
+
   int img_w = img.cols;
   int img_h = img.rows;
   int x_offset = (iW * scale - img_w) / 2;
   int y_offset = (iH * scale - img_h) / 2;
+  
+  std::vector<sl::CustomBoxObjectData> objects_in;
+
   for (size_t i = 0; i < num_dets[0]; i++) {
+    printf("an object was detected\n");
     float x0 = (det_boxes[i * 4]) * scale - x_offset;
     float y0 = (det_boxes[i * 4 + 1]) * scale - y_offset;
     float x1 = (det_boxes[i * 4 + 2]) * scale - x_offset;
     float y1 = (det_boxes[i * 4 + 3]) * scale - y_offset;
-    x0 = std::max(std::min(x0, (float)(img_w - 1)), 0.f);
-    y0 = std::max(std::min(y0, (float)(img_h - 1)), 0.f);
-    x1 = std::max(std::min(x1, (float)(img_w - 1)), 0.f);
-    y1 = std::max(std::min(y1, (float)(img_h - 1)), 0.f);
-    Boxes[i * 4] = x0;
-    Boxes[i * 4 + 1] = y0;
-    Boxes[i * 4 + 2] = x1 - x0;
-    Boxes[i * 4 + 3] = y1 - y0;
-    ClassIndexs[i] = det_classes[i];
+    int left = (int) std::max(std::min(x0, (float)(img_w - 1)), 0.f);
+    int top = (int) std::max(std::min(y0, (float)(img_h - 1)), 0.f);
+    int right = (int) std::max(std::min(x1, (float)(img_w - 1)), 0.f);
+    int bottom = (int) std::max(std::min(y1, (float)(img_h - 1)), 0.f);
+    
+    sl::CustomBoxObjectData tmp;
+    // Fill the detections into the correct SDK format
+    tmp.unique_object_id = sl::generate_unique_id();
+    tmp.probability = det_scores[i];
+    tmp.label = det_classes[i]; 
+
+    std::vector<sl::uint2> bbox_out(4);
+    bbox_out[0] = sl::uint2(left, top);
+    bbox_out[1] = sl::uint2(right, top);
+    bbox_out[2] = sl::uint2(right, bottom);
+    bbox_out[3] = sl::uint2(left, bottom);
+    tmp.bounding_box_2d = bbox_out;
+    tmp.is_grounded = true; 
+    objects_in.push_back(tmp);
+
   }
   delete blob;
+  return objects_in;
 }
 
 Yolo::~Yolo() {
@@ -256,6 +265,7 @@ Yolo::~Yolo() {
   runtime->destroy();
 }
 
+/*
 int main(int argc, char** argv) {
   if (argc == 5 && std::string(argv[1]) == "-model_path" && std::string(argv[3]) == "-image_path") {
     char* model_path = argv[2];
@@ -284,3 +294,4 @@ int main(int argc, char** argv) {
     return -1;
   }
 }
+*/

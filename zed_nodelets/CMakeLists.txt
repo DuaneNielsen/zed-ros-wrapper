@@ -87,6 +87,7 @@ catkin_package(
 
 set(TOOLS_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/src/sl_tools.cpp)
 set(ZED_NODELET_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/zed_nodelet/src/zed_wrapper_nodelet.cpp)
+set(YOLO_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/zed_nodelet/src/yolo.cpp)
 set(RGBD_SENS_SYNC_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/rgbd_sensors_sync_nodelet/src/rgbd_sensor_sync.cpp)
 set(RGBD_SENS_DEMUX_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/rgbd_sensors_demux_nodelet/src/rgbd_sensor_demux.cpp)
 
@@ -115,12 +116,12 @@ link_directories(${CUDA_TOOLKIT_ROOT_DIR}/lib64)
 
 ###############################################################################
 # yolov7 binary
-add_executable(yolo ${PROJECT_SOURCE_DIR}/src/zed_nodelet/src/yolo.cpp)
-target_include_directories(yolo PRIVATE ${INCLUDE_DIRS})
-target_link_libraries(yolo nvinfer)
-target_link_libraries(yolo nvinfer_plugin)
-target_link_libraries(yolo cudart)
-target_link_libraries(yolo ${OpenCV_LIBS})
+#add_executable(yolo ${PROJECT_SOURCE_DIR}/src/zed_nodelet/src/yolo.cpp)
+#target_include_directories(yolo PRIVATE ${INCLUDE_DIRS})
+#target_link_libraries(yolo nvinfer)
+#target_link_libraries(yolo nvinfer_plugin)
+#target_link_libraries(yolo cudart)
+#target_link_libraries(yolo ${OpenCV_LIBS})
 add_definitions(-O2 -pthread)
 
 ###############################################################################
@@ -137,11 +138,16 @@ set(LINK_LIBRARIES
 add_library(ZEDNodelets
     ${TOOLS_SRC}
     ${ZED_NODELET_SRC}
+    ${YOLO_SRC}
     ${RGBD_SENS_SYNC_SRC}
     ${RGBD_SENS_DEMUX_SRC}
 )
 target_include_directories(ZEDNodelets PRIVATE ${INCLUDE_DIRS})
 target_link_libraries(ZEDNodelets ${LINK_LIBRARIES})
+target_link_libraries(ZEDNodelets nvinfer)
+target_link_libraries(ZEDNodelets nvinfer_plugin)
+target_link_libraries(ZEDNodelets cudart)
+target_link_libraries(ZEDNodelets ${OpenCV_LIBS})
 add_dependencies(
     ZEDNodelets
     ${catkin_EXPORTED_TARGETS}

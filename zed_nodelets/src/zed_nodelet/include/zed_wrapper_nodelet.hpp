@@ -78,6 +78,8 @@
 #include <mutex>
 #include <thread>
 
+#include "yolo.hpp"
+
 namespace zed_nodelets {
 class ZEDWrapperNodelet : public nodelet::Nodelet {
     typedef enum _dyn_params {
@@ -725,8 +727,10 @@ private:
     bool mObjDetElectronicsEnable = true;
     bool mObjDetFruitsEnable = true;
     bool mObjDetSportsEnable = true;
+    std::string mObjEnginePath = "";
 
     sl::DETECTION_MODEL mObjDetModel = sl::DETECTION_MODEL::MULTI_CLASS_BOX;
+    boost::shared_ptr<Yolo> mYolo;
 
     ros::Publisher mPubObjDet;
 }; // class ZEDROSWrapperNodelet

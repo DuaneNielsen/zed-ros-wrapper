@@ -16,6 +16,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <sl/Camera.hpp>
+
 
 using nvinfer1::Dims2;
 using nvinfer1::Dims3;
@@ -62,14 +64,7 @@ class Yolo {
   float* blobFromImage(cv::Mat& img);
   void draw_objects(const cv::Mat& img, float* Boxes, int* ClassIndexs, int* BboxNum);
   void Init(char* model_path);
-  void Infer(
-      int aWidth,
-      int aHeight,
-      int aChannel,
-      unsigned char* aBytes,
-      float* Boxes,
-      int* ClassIndexs,
-      int* BboxNum);
+  std::vector<sl::CustomBoxObjectData> Infer( int aWidth, int aHeight, int aChannel, unsigned char* aBytes);
   ~Yolo();
 
  private:

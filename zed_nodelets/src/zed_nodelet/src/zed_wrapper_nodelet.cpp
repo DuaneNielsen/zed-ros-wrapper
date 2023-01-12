@@ -34,6 +34,12 @@
 #include "zed_interfaces/ObjectsStamped.h"
 #include <zed_interfaces/PlaneStamped.h>
 
+#ifndef BOOST_ALL_DYN_LINK
+#   define BOOST_ALL_DYN_LINK
+#endif
+#include <boost/filesystem.hpp>
+
+
 
 //#define DEBUG_SENS_TS 1
 
@@ -792,7 +798,8 @@ void ZEDWrapperNodelet::readParameters()
             mNhNs.getParam("object_detection/body_fitting", mObjDetBodyFitting);
             NODELET_INFO_STREAM(" * Body fitting\t\t\t-> " << (mObjDetBodyFitting ? "ENABLED" : "DISABLED"));
         } else if (mObjDetModel == sl::DETECTION_MODEL::CUSTOM_BOX_OBJECTS) {
-	   NODELET_INFO_STREAM("CUSTOM DETECTOR LOADED"); 
+           mNhNs.getParam("object_detection/engine", mObjEnginePath);
+	   NODELET_INFO_STREAM(" * Object engine\t\t-> " << mObjEnginePath); 
         } else {
             mNhNs.getParam("object_detection/mc_people", mObjDetPeopleEnable);
             NODELET_INFO_STREAM(" * Detect people\t\t-> " << (mObjDetPeopleEnable ? "ENABLED" : "DISABLED"));
@@ -1405,10 +1412,20 @@ bool ZEDWrapperNodelet::start_obj_detect()
     sl::ObjectDetectionParameters od_p;
     od_p.enable_mask_output = false;
     od_p.enable_tracking = mObjDetTracking;
-    od_p.image_sync = false; // Asynchronous object detection
+    od_p.image_sync = true; 
     od_p.detection_model = mObjDetModel;
     od_p.enable_body_fitting = mObjDetBodyFitting;
     od_p.max_range = mObjDetMaxRange;
+
+    // load the tensorRT yolo model
+    if (mObjDetModel == sl::DETECTION_MODEL::CUSTOM_BOX_OBJECTS) {
+       if ( ! boost::filesystem::exists(mObjEnginePath.c_str())) {
+          NODELET_ERROR_STREAM("Object detection error: engine not found at " << mObjEnginePath);
+          mObjDetRunning = false;
+	  return false;
+       }
+       mYolo.reset(new Yolo((char *)mObjEnginePath.c_str()));
+    }
 
     sl::ERROR_CODE objDetError = mZed.enableObjectDetection(od_p);
 
@@ -1465,6 +1482,9 @@ void ZEDWrapperNodelet::stop_obj_detect()
         mObjDetRunning = false;
         mObjDetEnabled = false;
         mZed.disableObjectDetection();
+        if (mObjDetModel == sl::DETECTION_MODEL::CUSTOM_BOX_OBJECTS) {
+	    mYolo.reset();
+	}
     }
 }
 
@@ -4239,7 +4259,6 @@ bool ZEDWrapperNodelet::on_save_3d_map(zed_interfaces::save_3d_map::Request& req
 bool ZEDWrapperNodelet::on_start_object_detection(zed_interfaces::start_object_detection::Request& req,
     zed_interfaces::start_object_detection::Response& res)
 {
-    //todo: need to add custom detector here
     NODELET_INFO("Called 'start_object_detection' service");
 
     if (mZedRealCamModel == sl::MODEL::ZED) {
@@ -4283,6 +4302,9 @@ bool ZEDWrapperNodelet::on_start_object_detection(zed_interfaces::start_object_d
     if (mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_ACCURATE || mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_MEDIUM || mObjDetModel == sl::DETECTION_MODEL::HUMAN_BODY_FAST) {
         mObjDetBodyFitting = req.sk_body_fitting;
         NODELET_INFO_STREAM(" * Body fitting\t\t\t-> " << (mObjDetBodyFitting ? "ENABLED" : "DISABLED"));
+    } else if (mObjDetModel == sl::DETECTION_MODEL::CUSTOM_BOX_OBJECTS) {
+        mObjEnginePath = req.engine;
+        NODELET_INFO_STREAM(" * Object engine\t\t-> " << mObjEnginePath); 
     } else {
         mObjDetPeopleEnable = req.mc_people;
         NODELET_INFO_STREAM(" * Detect people\t\t-> " << (mObjDetPeopleEnable ? "ENABLED" : "DISABLED"));
@@ -4325,6 +4347,32 @@ bool ZEDWrapperNodelet::on_stop_object_detection(zed_interfaces::stop_object_det
     return res.done;
 }
 
+inline cv::Mat slMat2cvMat(sl::Mat& input) {
+    // Mapping between MAT_TYPE and CV_TYPE
+    int cv_type = -1;
+    switch (input.getDataType()) {
+        case sl::MAT_TYPE::F32_C1: cv_type = CV_32FC1;
+            break;
+        case sl::MAT_TYPE::F32_C2: cv_type = CV_32FC2;
+            break;
+        case sl::MAT_TYPE::F32_C3: cv_type = CV_32FC3;
+            break;
+        case sl::MAT_TYPE::F32_C4: cv_type = CV_32FC4;
+            break;
+        case sl::MAT_TYPE::U8_C1: cv_type = CV_8UC1;
+            break;
+        case sl::MAT_TYPE::U8_C2: cv_type = CV_8UC2;
+            break;
+        case sl::MAT_TYPE::U8_C3: cv_type = CV_8UC3;
+            break;
+        case sl::MAT_TYPE::U8_C4: cv_type = CV_8UC4;
+            break;
+        default: break;
+    }
+
+    return cv::Mat(input.getHeight(), input.getWidth(), cv_type, input.getPtr<sl::uchar1>(sl::MEM::CPU));
+}
+
 void ZEDWrapperNodelet::processDetectedObjects(ros::Time t)
 {
     NODELET_INFO_STREAM("Entered process DetectedObjects");
@@ -4336,40 +4384,23 @@ void ZEDWrapperNodelet::processDetectedObjects(ros::Time t)
     objectTracker_parameters_rt.object_class_filter = mObjDetFilter;
 
     
-    std::vector<sl::CustomBoxObjectData> objects_in;
+    if (mObjDetModel == sl::DETECTION_MODEL::CUSTOM_BOX_OBJECTS) {
+        sl::Mat left_sl;
+        mZed.retrieveImage(left_sl, sl::VIEW::LEFT);
+        cv::Mat left_cv_rgba = slMat2cvMat(left_sl);
+        cv::Mat left_cv_rgb;
+        cv::cvtColor(left_cv_rgba, left_cv_rgb, cv::COLOR_BGRA2BGR);
+        //cv::imshow("preprocessed image", left_cv_rgb);
+        //cv::waitKey(h);
+        // cv::Mat left_cv_rgb = cv::imread("/home/duane/TensorRT-For-YOLO-Series/cpp/end2end/build/cone.png");
 
-    // The "detections" variable contains your custom 2D detections
-    for (int i = 0; i < 1; i++) {
-        sl::CustomBoxObjectData tmp;
-        // Fill the detections into the correct SDK format
-        tmp.unique_object_id = sl::generate_unique_id();
-        tmp.probability = 1.0;
-        tmp.label = (int) 0;
-        /**
-         * \brief 2D bounding box of the person represented as four 2D points starting at the top left corner and rotation clockwise.
-         * Expressed in pixels on the original image resolution, [0,0] is the top left corner.
-         * \code
-             A ------ B
-             | Object |
-             D ------ C
-         \endcode
-         */
+        std::vector<sl::CustomBoxObjectData> objects_in;
+        objects_in = mYolo->Infer(left_cv_rgb.cols, left_cv_rgb.rows, left_cv_rgb.channels(), left_cv_rgb.data);
 
-	int left = 300;
-	int right = 500;
-	int top = 200;
-	int bottom = 400;
+        NODELET_INFO_STREAM("Objects detected: " << objects_in.size());
 
-	std::vector<sl::uint2> bbox_out(4);
-        bbox_out[0] = sl::uint2(left, top);
-        bbox_out[1] = sl::uint2(right, top);
-        bbox_out[2] = sl::uint2(right, bottom);
-        bbox_out[3] = sl::uint2(left, bottom);
-        tmp.bounding_box_2d = bbox_out;
-        tmp.is_grounded = true; // objects are moving on the floor plane and tracked in 2D only
-        objects_in.push_back(tmp);
+        mZed.ingestCustomBoxObjects(objects_in);
     }
-    mZed.ingestCustomBoxObjects(objects_in);
 
     sl::Objects objects;
 
