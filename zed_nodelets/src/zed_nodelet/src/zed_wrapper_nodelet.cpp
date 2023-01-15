@@ -29,6 +29,7 @@
 #ifndef NDEBUG
 #include <ros/console.h>
 #endif
+#include <ros/package.h>
 
 #include "zed_interfaces/Object.h"
 #include "zed_interfaces/ObjectsStamped.h"
@@ -799,6 +800,10 @@ void ZEDWrapperNodelet::readParameters()
             NODELET_INFO_STREAM(" * Body fitting\t\t\t-> " << (mObjDetBodyFitting ? "ENABLED" : "DISABLED"));
         } else if (mObjDetModel == sl::DETECTION_MODEL::CUSTOM_BOX_OBJECTS) {
            mNhNs.getParam("object_detection/engine", mObjEnginePath);
+           if (mObjEnginePath.empty()) {
+               mObjEnginePath= ros::package::getPath("zed-ros-yolo-weights") + "/engines/yolov7.engine";
+               NODELET_INFO_STREAM(" * Detection engine empty, loading default \t\t");
+           }
 	   NODELET_INFO_STREAM(" * Object engine\t\t-> " << mObjEnginePath); 
         } else {
             mNhNs.getParam("object_detection/mc_people", mObjDetPeopleEnable);
