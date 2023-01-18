@@ -62,9 +62,10 @@ class Yolo {
       bool fixed_shape,
       bool scale_up);
   float* blobFromImage(cv::Mat& img);
-  void draw_objects(const cv::Mat& img, float* Boxes, int* ClassIndexs, int* BboxNum);
+  void draw_objects(const cv::Mat& img, std::vector<sl::CustomBoxObjectData> objects);
+  void draw_objects(const cv::Mat& img, int* num_dets, float* det_boxes, float* det_scores, int* det_classes);
   void Init(char* model_path);
-  std::vector<sl::CustomBoxObjectData> Infer( int aWidth, int aHeight, int aChannel, unsigned char* aBytes);
+  std::vector<sl::CustomBoxObjectData> Infer( int aWidth, int aHeight, int aChannel, unsigned char* aBytes, bool debug = false);
   ~Yolo();
 
  private:

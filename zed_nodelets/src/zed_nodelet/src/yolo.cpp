@@ -60,22 +60,65 @@ float* Yolo::blobFromImage(cv::Mat& img) {
   return blob;
 }
 
-void Yolo::draw_objects(const cv::Mat& img, float* Boxes, int* ClassIndexs, int* BboxNum) {
-  std::cout << "Yolo::draw_objects BboxNum:" << BboxNum[0] << std::endl;
-  for (int j = 0; j < BboxNum[0]; j++) {
-    cv::Rect rect(Boxes[j * 4], Boxes[j * 4 + 1], Boxes[j * 4 + 2], Boxes[j * 4 + 3]);
-    cv::rectangle(img, rect, cv::Scalar(0x27, 0xC1, 0x36), 2);
+cv::Scalar confidence2color(float conf) {
+    int green = (int) (255.0 * conf);
+    int red = (int) (255.0 * (1.0 - conf));
+    return cv::Scalar(red, green, 0);
+}
+
+void Yolo::draw_objects(const cv::Mat& img, std::vector<sl::CustomBoxObjectData> objects) {
+  std::cout << "Yolo::draw_objects BboxNum:" << objects.size() << std::endl;
+  for (int j = 0; j < objects.size(); j++) {
+    std::vector<sl::uint2> bbox = objects[j].bounding_box_2d;
+    int left = bbox[0].x;
+    int top = bbox[0].y;
+    int w = bbox[2].x - bbox[0].x;
+    int h = bbox[2].y - bbox[0].y;
+    cv::Rect rect(left, top, w, h);
+    cv::rectangle(img, rect, confidence2color(objects[j].probability), 2);
     cv::putText(
         img,
-        std::to_string(ClassIndexs[j]),
+        std::to_string(objects[j].label),
         cv::Point(rect.x, rect.y - 1),
         cv::FONT_HERSHEY_PLAIN,
         1.2,
         cv::Scalar(0xFF, 0xFF, 0xFF),
         2);
-    cv::imwrite("result.jpg", img);
   }
-  std::cout << "Yolo:draw_objects return" << std::endl;
+  cv::imshow("preprocessed image", img);
+  cv::waitKey(10);
+}
+
+void Yolo::draw_objects(const cv::Mat& img, int* num_dets, 
+        float* det_boxes, float* det_scores, int* det_classes) {
+  std::cout << "Yolo::draw_objects BboxNum:" << num_dets[0] << std::endl;
+  for (size_t j = 0; j < num_dets[0]; j++) {
+    float x0 = (det_boxes[j * 4]);
+    float y0 = (det_boxes[j * 4 + 1]); 
+    float x1 = (det_boxes[j * 4 + 2]);
+    float y1 = (det_boxes[j * 4 + 3]);
+    int img_w = img.cols;
+    int img_h = img.rows;
+    int left = (int) std::max(std::min(x0, (float)(img_w - 1)), 0.f);
+    int top = (int) std::max(std::min(y0, (float)(img_h - 1)), 0.f);
+    int right = (int) std::max(std::min(x1, (float)(img_w - 1)), 0.f);
+    int bottom = (int) std::max(std::min(y1, (float)(img_h - 1)), 0.f);
+    int w = right - left;
+    int h = bottom - top;
+
+    cv::Rect rect(left, top, w, h);
+    cv::rectangle(img, rect, confidence2color(det_scores[j]), 2);
+    cv::putText(
+        img,
+        std::to_string(det_classes[j]),
+        cv::Point(rect.x, rect.y - 1),
+        cv::FONT_HERSHEY_PLAIN,
+        1.2,
+        cv::Scalar(0xFF, 0xFF, 0xFF),
+        2);
+  }
+  cv::imshow("preprocessed image", img);
+  cv::waitKey(10);
 }
 
 Yolo::Yolo(char* model_path) {
@@ -167,14 +210,11 @@ Yolo::Yolo(char* model_path) {
   }
 }
 
-std::vector<sl::CustomBoxObjectData> Yolo::Infer( int aWidth, int aHeight, int aChannel, unsigned char* aBytes) {
+std::vector<sl::CustomBoxObjectData> Yolo::Infer( int aWidth, int aHeight, int aChannel, unsigned char* aBytes, bool debug) {
   cv::Mat img(aHeight, aWidth, CV_MAKETYPE(CV_8U, aChannel), aBytes);
   cv::Mat pr_img;
   float scale = letterbox(img, pr_img, {iW, iH}, 32, {114, 114, 114}, true);
   //cv::cvtColor(pr_img, pr_img, cv::COLOR_BGR2RGB);
-  cv::imshow("preprocessed image", pr_img);
-  cv::waitKey(10);
- // cv::imwrite("input.jpg", pr_img);
   float* blob = blobFromImage(pr_img);
 
   static int* num_dets = new int[out_size1];
@@ -218,11 +258,14 @@ std::vector<sl::CustomBoxObjectData> Yolo::Infer( int aWidth, int aHeight, int a
   int img_h = img.rows;
   int x_offset = (iW * scale - img_w) / 2;
   int y_offset = (iH * scale - img_h) / 2;
-  
+
   std::vector<sl::CustomBoxObjectData> objects_in;
 
+  if (debug) {
+    draw_objects(pr_img, num_dets, det_boxes, det_scores, det_classes);
+  }
+
   for (size_t i = 0; i < num_dets[0]; i++) {
-    printf("an object was detected\n");
     float x0 = (det_boxes[i * 4]) * scale - x_offset;
     float y0 = (det_boxes[i * 4 + 1]) * scale - y_offset;
     float x1 = (det_boxes[i * 4 + 2]) * scale - x_offset;
@@ -231,7 +274,7 @@ std::vector<sl::CustomBoxObjectData> Yolo::Infer( int aWidth, int aHeight, int a
     int top = (int) std::max(std::min(y0, (float)(img_h - 1)), 0.f);
     int right = (int) std::max(std::min(x1, (float)(img_w - 1)), 0.f);
     int bottom = (int) std::max(std::min(y1, (float)(img_h - 1)), 0.f);
-    
+
     sl::CustomBoxObjectData tmp;
     // Fill the detections into the correct SDK format
     tmp.unique_object_id = sl::generate_unique_id();

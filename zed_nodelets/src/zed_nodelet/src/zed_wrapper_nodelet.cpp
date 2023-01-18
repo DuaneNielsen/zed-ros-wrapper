@@ -4380,7 +4380,6 @@ inline cv::Mat slMat2cvMat(sl::Mat& input) {
 
 void ZEDWrapperNodelet::processDetectedObjects(ros::Time t)
 {
-    NODELET_INFO_STREAM("Entered process DetectedObjects");
     // todo: we could put our object detection code here
     static std::chrono::steady_clock::time_point old_time = std::chrono::steady_clock::now();
 
@@ -4395,12 +4394,10 @@ void ZEDWrapperNodelet::processDetectedObjects(ros::Time t)
         cv::Mat left_cv_rgba = slMat2cvMat(left_sl);
         cv::Mat left_cv_rgb;
         cv::cvtColor(left_cv_rgba, left_cv_rgb, cv::COLOR_BGRA2BGR);
-        //cv::imshow("preprocessed image", left_cv_rgb);
-        //cv::waitKey(h);
-        // cv::Mat left_cv_rgb = cv::imread("/home/duane/TensorRT-For-YOLO-Series/cpp/end2end/build/cone.png");
 
         std::vector<sl::CustomBoxObjectData> objects_in;
-        objects_in = mYolo->Infer(left_cv_rgb.cols, left_cv_rgb.rows, left_cv_rgb.channels(), left_cv_rgb.data);
+        objects_in = mYolo->Infer(left_cv_rgb.cols, left_cv_rgb.rows, left_cv_rgb.channels(), left_cv_rgb.data, true);
+        //mYolo->draw_objects(left_cv_rgb, objects_in);
 
         NODELET_INFO_STREAM("Objects detected: " << objects_in.size());
 
@@ -4491,7 +4488,6 @@ void ZEDWrapperNodelet::processDetectedObjects(ros::Time t)
     }
 
     mPubObjDet.publish(objMsg);
-    NODELET_INFO_STREAM("Exited process DetectedObjects");
 }
 
 void ZEDWrapperNodelet::clickedPtCallback(geometry_msgs::PointStampedConstPtr msg)
